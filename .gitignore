@@ -1,0 +1,47 @@
+# Compilados do Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+
+# Configurações do editor
+.vscode/
+.idea/
+
+# Logs
+*.log
+logs/
+
+# Arquivos temporários
+*.tmp
+*.swp
+*.swo
+*~
+
+# Build / Distribuição
+build/
+dist/
+*.egg-info/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Cache de libs
+.pytest_cache/
+.mypy_cache/
+
+# Dados sensíveis
+*.env
+.env/
+
+# Arquivos de configuração do sistema
+out/
+.DS_Store
+Thumbs.db
+chroma_db/
+nome_do_ambiente/
