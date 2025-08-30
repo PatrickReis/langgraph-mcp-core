@@ -2,15 +2,14 @@ import os
 import json
 from typing import TypedDict, Annotated, List, Dict, Any, Union
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
-from langchain_ollama import OllamaLLM, OllamaEmbeddings
-from langchain_chroma import Chroma
-from langchain.text_splitter import CharacterTextSplitter
-from langchain.docstore.document import Document
-from langchain.tools import tool
+from langchain_ollama import OllamaLLM
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
 from langgraph.graph.message import add_messages
 import operator
+
+# Importar ferramentas do arquivo tools.py
+from tools import tools, search_knowledge_base
 
 # Configuração do estado do agente
 class AgentState(TypedDict):
@@ -22,71 +21,7 @@ llm = OllamaLLM(
     base_url="http://localhost:11434"  # URL padrão do Ollama
 )
 
-embeddings = OllamaEmbeddings(
-    model="llama3:latest",
-    base_url="http://localhost:11434"
-)
-
-# Inicialização da base vetorial ChromaDB
-def initialize_vectorstore():
-    # Documentos de exemplo para popular a base
-    documents = [
-        "Python é uma linguagem de programação de alto nível, interpretada e de propósito geral.",
-        "LangGraph é uma biblioteca para construir aplicações com múltiplos agentes usando grafos.",
-        "ChromaDB é uma base de dados vetorial open-source otimizada para embeddings.",
-        "Ollama permite executar grandes modelos de linguagem localmente em sua máquina.",
-        "RAG (Retrieval Augmented Generation) combina recuperação de informações com geração de texto.",
-        "Machine Learning é um subcampo da inteligência artificial que se concentra no desenvolvimento de algoritmos.",
-        "Deep Learning usa redes neurais artificiais com múltiplas camadas para aprender padrões complexos.",
-        "Natural Language Processing (NLP) é uma área da IA que ajuda computadores a entender linguagem humana."
-    ]
-    
-    # Converter strings em documentos
-    docs = [Document(page_content=doc, metadata={"source": f"doc_{i}"}) for i, doc in enumerate(documents)]
-    
-    # Criar a base vetorial
-    vectorstore = Chroma.from_documents(
-        documents=docs,
-        embedding=embeddings,
-        persist_directory="./chroma_db"
-    )
-    
-    return vectorstore
-
-# Inicializar a base vetorial
-vectorstore = initialize_vectorstore()
-
-# Definição da ferramenta de busca vetorial
-@tool
-def search_knowledge_base(query: str) -> str:
-    """
-    Busca informações relevantes na base de conhecimento vetorial.
-    Útil quando o usuário faz perguntas sobre conceitos técnicos, programação, IA, etc.
-    
-    Args:
-        query: A consulta ou pergunta do usuário
-    
-    Returns:
-        Informações relevantes encontradas na base de conhecimento
-    """
-    try:
-        # Realizar busca por similaridade
-        docs = vectorstore.similarity_search(query, k=3)
-        
-        if docs:
-            results = []
-            for i, doc in enumerate(docs, 1):
-                results.append(f"{i}. {doc.page_content}")
-            
-            return "Informações encontradas na base de conhecimento:\n" + "\n".join(results)
-        else:
-            return "Nenhuma informação relevante encontrada na base de conhecimento."
-    
-    except Exception as e:
-        return f"Erro ao buscar na base de conhecimento: {str(e)}"
-
-# Lista de ferramentas disponíveis
-tools = [search_knowledge_base]
+# Configurar ToolNode com as ferramentas importadas
 tool_node = ToolNode(tools)
 
 # Função para determinar se deve chamar ferramentas
@@ -180,7 +115,7 @@ def call_tool(state: AgentState) -> AgentState:
         tool_name = tool_call["name"]
         tool_args = tool_call["args"]
         
-        # Executar a ferramenta usando o ToolNode
+        # Executar a ferramenta usando a função importada
         if tool_name == "search_knowledge_base":
             result = search_knowledge_base.invoke(tool_args)
             results.append(f"Resultado da ferramenta {tool_name}: {result}")

@@ -76,6 +76,7 @@ def register_langchain_tools_as_mcp(mcp: FastMCP, tools: List[BaseTool]):
             wrapper.__name__ = name
             wrapper.__doc__ = description
             wrapper.__signature__ = sig
+            wrapper.__annotations__ = annotations
 
             mcp.tool()(wrapper)  # registra com nome=__name__ e docstring
         else:
