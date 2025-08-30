@@ -2,9 +2,7 @@ import os
 import asyncio
 from fastmcp import FastMCP
 
-# 💡 importe suas definições existentes:
-# - embeddings, vectorstore, @tool search_knowledge_base, lista "tools", etc.
-from tools import tools # <-- Renomeei o arquivo para evitar conflito
+from tools import tools 
 
 from mcp_bridge import register_langchain_tools_as_mcp
 
@@ -22,5 +20,4 @@ def create_mcp_server() -> FastMCP:
 
     return mcp
 
-# 💡 A CLI do fastmcp vai importar o arquivo e usar esta instância `mcp`
 mcp = create_mcp_server()

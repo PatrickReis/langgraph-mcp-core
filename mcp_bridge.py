@@ -43,12 +43,10 @@ def register_langchain_tools_as_mcp(mcp: FastMCP, tools: List[BaseTool]):
         name, description, args_schema = _tool_metadata(lc_tool)
 
         # Cria um wrapper assíncrono chamando lc_tool.invoke(...)
-        # Preferimos kwargs (StructuredTool) mas também suportamos entrada simples.
         if args_schema is not None:
             # StructuredTool: registrar assinatura com kwargs tipados
             hints = _kwargs_from_args_schema(args_schema)
 
-            # Monta parâmetros dinamicamente
             params = []
             annotations = {}
             for pname, (ann, default) in hints.items():
@@ -60,7 +58,6 @@ def register_langchain_tools_as_mcp(mcp: FastMCP, tools: List[BaseTool]):
                 )
                 params.append(param)
                 annotations[pname] = ann
-            # Retorno como string genérico
             annotations["return"] = str
             sig = inspect.Signature(params)
 
@@ -80,15 +77,11 @@ def register_langchain_tools_as_mcp(mcp: FastMCP, tools: List[BaseTool]):
 
             mcp.tool()(wrapper)  # registra com nome=__name__ e docstring
         else:
-            # Tool simples (um único argumento "input" ou similar)
-            # Tentamos usar a convenção 'input: str'
-            async def wrapper(input: str) -> str:  # type: ignore
+            async def wrapper(input: str) -> str:
                 def _run():
                     try:
-                        # Tenta como string direta
                         return lc_tool.invoke(input)
                     except TypeError:
-                        # Fallback: envia como dict {input: ...}
                         return lc_tool.invoke({"input": input})
 
                 result = await asyncio.to_thread(_run)
@@ -97,7 +90,7 @@ def register_langchain_tools_as_mcp(mcp: FastMCP, tools: List[BaseTool]):
             wrapper.__name__ = name
             wrapper.__doc__ = description
 
-            mcp.tool()(wrapper)  # registra
+            mcp.tool()(wrapper)
 
 
 __all__ = ["register_langchain_tools_as_mcp"]
