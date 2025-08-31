@@ -3,11 +3,11 @@ langchain==0.3.27
 langchain-community==0.3.29
 langchain-chroma==0.2.5
 langchain-ollama==0.3.7
-langchain-openai==0.2.8
-langchain-google-genai==0.2.8
+langchain-openai==0.3.32
+langchain-google-genai==2.1.10
 chromadb==1.0.20
 ollama==0.5.3
 mcp[cli] 
 fastmcp
 python-dotenv==1.0.0
-google-generativeai==0.8.3
+requests>=2.32.5

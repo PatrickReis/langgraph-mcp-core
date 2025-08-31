@@ -6,7 +6,7 @@ import asyncio
 import inspect
 from typing import Any, Dict, List, Optional, Type
 
-from mcp.server.fastmcp import FastMCP
+# Import genérico para compatibilidade
 from pydantic import BaseModel
 from langchain.tools.base import BaseTool
 
@@ -35,12 +35,17 @@ def _kwargs_from_args_schema(args_schema: Type[BaseModel]) -> Dict[str, Any]:
     return hints
 
 
-def register_langchain_tools_as_mcp(mcp: FastMCP, tools: List[BaseTool]):
+def register_langchain_tools_as_mcp(mcp, tools: List[BaseTool]):
     """
     Para cada LangChain Tool, cria e registra uma tool MCP equivalente.
     """
     for lc_tool in tools:
-        name, description, args_schema = _tool_metadata(lc_tool)
+        try:
+            name, description, args_schema = _tool_metadata(lc_tool)
+            print(f"📝 Registrando tool: {name}")
+        except Exception as e:
+            print(f"❌ Erro ao extrair metadados da tool {lc_tool}: {e}")
+            continue
 
         # Cria um wrapper assíncrono chamando lc_tool.invoke(...)
         if args_schema is not None:
@@ -75,9 +80,13 @@ def register_langchain_tools_as_mcp(mcp: FastMCP, tools: List[BaseTool]):
             wrapper.__signature__ = sig
             wrapper.__annotations__ = annotations
 
-            mcp.tool()(wrapper)  # registra com nome=__name__ e docstring
+            try:
+                mcp.tool()(wrapper)  # registra com nome=__name__ e docstring
+                print(f"✅ Tool registrada com sucesso: {name}")
+            except Exception as e:
+                print(f"❌ Erro ao registrar tool estruturada {name}: {e}")
         else:
-            async def wrapper(input: str) -> str:
+            async def simple_wrapper(input: str) -> str:
                 def _run():
                     try:
                         return lc_tool.invoke(input)
@@ -87,10 +96,14 @@ def register_langchain_tools_as_mcp(mcp: FastMCP, tools: List[BaseTool]):
                 result = await asyncio.to_thread(_run)
                 return result if isinstance(result, str) else str(result)
 
-            wrapper.__name__ = name
-            wrapper.__doc__ = description
+            simple_wrapper.__name__ = name
+            simple_wrapper.__doc__ = description
 
-            mcp.tool()(wrapper)
+            try:
+                mcp.tool()(simple_wrapper)
+                print(f"✅ Tool simples registrada com sucesso: {name}")
+            except Exception as e:
+                print(f"❌ Erro ao registrar tool simples {name}: {e}")
 
 
 __all__ = ["register_langchain_tools_as_mcp"]

@@ -91,7 +91,23 @@ fastmcp run mcp_server.py
 ### Executar servidor MCP com HTTP
 ```bash
 fastmcp run mcp_server.py --transport streamable-http --host 127.0.0.1 --port 8088
+```
 
+### Testar servidor MCP
+```bash
+python test_mcp.py
+```
+
+### Usar MCP Inspector (Interface Web)
+```bash
+# Instalar MCP Inspector
+pip install mcp-inspector
+
+# Executar (em terminal separado)
+mcp-inspector
+
+# Abrir navegador em http://localhost:3000
+# Conectar em: http://127.0.0.1:8088/mcp
 ```
 
 ## 🔧 Funcionalidades
@@ -110,5 +126,7 @@ fastmcp run mcp_server.py --transport streamable-http --host 127.0.0.1 --port 80
 - `mcp_server.py`: Servidor MCP
 - `mcp_bridge.py`: Bridge entre LangChain e MCP
 - `llm_providers.py`: Sistema modular de provedores LLM
+- `test_providers.py`: Teste dos provedores LLM
+- `test_mcp.py`: Teste do servidor MCP
 - `.env`: Configurações do ambiente (não commitado)
 - `.env.example`: Exemplo de configurações
