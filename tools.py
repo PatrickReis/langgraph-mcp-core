@@ -1,19 +1,20 @@
 # tools.py
 import os
 from langchain_chroma import Chroma
-from langchain_ollama import OllamaEmbeddings
 from langchain.docstore.document import Document
 from langchain.tools import tool
 from dotenv import load_dotenv
+from llm_providers import get_embeddings
 
 # Carregar variáveis de ambiente
 load_dotenv()
 
-# Configuração do Ollama para embeddings
-embeddings = OllamaEmbeddings(
-    model=os.getenv("OLLAMA_EMBEDDINGS_MODEL", "nomic-embed-text"),
-    base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-)
+# Configuração dos embeddings
+try:
+    embeddings = get_embeddings()
+except Exception as e:
+    print(f"❌ Erro ao configurar embeddings: {e}")
+    raise
 
 # Inicialização da base vetorial ChromaDB
 def initialize_vectorstore():

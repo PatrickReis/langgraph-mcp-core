@@ -1,8 +1,6 @@
 import os
 import json
 from typing import TypedDict, Annotated, List, Dict, Any
-from langchain_community.llms import Ollama
-from langchain_community.embeddings import OllamaEmbeddings
 from langchain_chroma import Chroma
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.docstore.document import Document
@@ -12,6 +10,7 @@ from langgraph.prebuilt import ToolExecutor, ToolInvocation
 from langgraph.graph.message import add_messages
 import operator
 from dotenv import load_dotenv
+from llm_providers import get_llm, get_embeddings, get_provider_info
 
 # Carregar variáveis de ambiente
 load_dotenv()
@@ -22,16 +21,16 @@ class AgentState(TypedDict):
     tool_calls: List[Dict[str, Any]]
     final_answer: str
 
-# Configuração do Ollama
-llm = Ollama(
-    model=os.getenv("OLLAMA_MODEL", "llama3:latest"),
-    base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-)
-
-embeddings = OllamaEmbeddings(
-    model=os.getenv("OLLAMA_EMBEDDINGS_MODEL", "nomic-embed-text"),
-    base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-)
+# Configuração dos provedores LLM
+try:
+    llm = get_llm()
+    embeddings = get_embeddings()
+    provider_info = get_provider_info()
+    print(f"✅ Provedor LLM configurado: {provider_info['provider']}")
+except Exception as e:
+    print(f"❌ Erro ao configurar provedor LLM: {e}")
+    print("Verifique as configurações no arquivo .env")
+    exit(1)
 
 # Inicialização da base vetorial ChromaDB
 def initialize_vectorstore():
@@ -273,7 +272,8 @@ def run_agent():
     
     print("🤖 Agente LangGraph inicializado!")
     print("💾 Base vetorial ChromaDB carregada")
-    print(f"🦙 Usando Ollama com {os.getenv('OLLAMA_MODEL', 'llama3:latest')}")
+    print(f"🚀 Provedor LLM: {provider_info['provider']}")
+    print(f"📝 Modelo: {provider_info.get('model', 'N/A')}")
     print("\nDigite suas perguntas (ou 'quit' para sair):\n")
     
     while True:
@@ -307,13 +307,18 @@ def run_agent():
             print(f"❌ Erro: {str(e)}\n")
 
 if __name__ == "__main__":
-    # Verificar se o Ollama está executando
+    # Verificar se o provedor LLM está funcionando
     try:
         test_response = llm.invoke("Hello")
-        print("✅ Conexão com Ollama estabelecida")
+        print("✅ Conexão com provedor LLM estabelecida")
     except Exception as e:
-        print(f"❌ Erro ao conectar com Ollama: {e}")
-        print("Certifique-se de que o Ollama está rodando com: ollama serve")
+        print(f"❌ Erro ao conectar com provedor LLM: {e}")
+        if provider_info['provider'] == 'ollama':
+            print("Certifique-se de que o Ollama está rodando com: ollama serve")
+        elif provider_info['provider'] == 'openai':
+            print("Verifique se a OPENAI_API_KEY está configurada corretamente")
+        elif provider_info['provider'] == 'gemini':
+            print("Verifique se a GEMINI_API_KEY está configurada corretamente")
         exit(1)
     
     # Executar o agente
