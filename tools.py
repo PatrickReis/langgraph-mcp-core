@@ -4,11 +4,15 @@ from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings
 from langchain.docstore.document import Document
 from langchain.tools import tool
+from dotenv import load_dotenv
+
+# Carregar variáveis de ambiente
+load_dotenv()
 
 # Configuração do Ollama para embeddings
 embeddings = OllamaEmbeddings(
-    model="nomic-embed-text",
-    base_url="http://localhost:11434"
+    model=os.getenv("OLLAMA_EMBEDDINGS_MODEL", "nomic-embed-text"),
+    base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 )
 
 # Inicialização da base vetorial ChromaDB
@@ -27,18 +31,17 @@ def initialize_vectorstore():
     vectorstore = Chroma.from_documents(
         documents=docs,
         embedding=embeddings,
-        persist_directory="./chroma_db"
+        persist_directory=os.getenv("CHROMA_PERSIST_DIRECTORY", "./chroma_db")
     )
     return vectorstore
 
 # Inicializar a base vetorial (apenas uma vez)
-import os
-if not os.path.exists("./chroma_db"):
+if not os.path.exists(os.getenv("CHROMA_PERSIST_DIRECTORY", "./chroma_db")):
     vectorstore = initialize_vectorstore()
 else:
     # Carregar base existente
     vectorstore = Chroma(
-        persist_directory="./chroma_db",
+        persist_directory=os.getenv("CHROMA_PERSIST_DIRECTORY", "./chroma_db"),
         embedding_function=embeddings
     )
 
@@ -55,7 +58,8 @@ def search_knowledge_base(query: str) -> str:
         Informações relevantes encontradas na base de conhecimento
     """
     try:
-        docs = vectorstore.similarity_search(query, k=3)
+        k_results = int(os.getenv("VECTOR_SEARCH_K_RESULTS", "3"))
+        docs = vectorstore.similarity_search(query, k=k_results)
         if docs:
             # Remove documentos duplicados
             unique_docs = []

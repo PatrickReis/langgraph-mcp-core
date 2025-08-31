@@ -1,28 +1,100 @@
 import os
 import json
-from typing import TypedDict, Annotated, List, Dict, Any, Union
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
-from langchain_ollama import OllamaLLM
+from typing import TypedDict, Annotated, List, Dict, Any
+from langchain_community.llms import Ollama
+from langchain_community.embeddings import OllamaEmbeddings
+from langchain_chroma import Chroma
+from langchain.text_splitter import CharacterTextSplitter
+from langchain.docstore.document import Document
+from langchain.tools import tool
 from langgraph.graph import StateGraph, END
-from langgraph.prebuilt import ToolNode
+from langgraph.prebuilt import ToolExecutor, ToolInvocation
 from langgraph.graph.message import add_messages
 import operator
+from dotenv import load_dotenv
 
-# Importar ferramentas do arquivo tools.py
-from tools import tools, search_knowledge_base
+# Carregar variáveis de ambiente
+load_dotenv()
 
 # Configuração do estado do agente
 class AgentState(TypedDict):
-    messages: Annotated[List[Union[HumanMessage, AIMessage, ToolMessage]], add_messages]
+    messages: Annotated[List[Dict[str, Any]], add_messages]
+    tool_calls: List[Dict[str, Any]]
+    final_answer: str
 
 # Configuração do Ollama
-llm = OllamaLLM(
-    model="llama3:latest",
-    base_url="http://localhost:11434"  # URL padrão do Ollama
+llm = Ollama(
+    model=os.getenv("OLLAMA_MODEL", "llama3:latest"),
+    base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 )
 
-# Configurar ToolNode com as ferramentas importadas
-tool_node = ToolNode(tools)
+embeddings = OllamaEmbeddings(
+    model=os.getenv("OLLAMA_EMBEDDINGS_MODEL", "nomic-embed-text"),
+    base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+)
+
+# Inicialização da base vetorial ChromaDB
+def initialize_vectorstore():
+    # Documentos de exemplo para popular a base
+    documents = [
+        "Python é uma linguagem de programação de alto nível, interpretada e de propósito geral.",
+        "LangGraph é uma biblioteca para construir aplicações com múltiplos agentes usando grafos.",
+        "ChromaDB é uma base de dados vetorial open-source otimizada para embeddings.",
+        "Ollama permite executar grandes modelos de linguagem localmente em sua máquina.",
+        "RAG (Retrieval Augmented Generation) combina recuperação de informações com geração de texto.",
+        "Machine Learning é um subcampo da inteligência artificial que se concentra no desenvolvimento de algoritmos.",
+        "Deep Learning usa redes neurais artificiais com múltiplas camadas para aprender padrões complexos.",
+        "Natural Language Processing (NLP) é uma área da IA que ajuda computadores a entender linguagem humana."
+    ]
+    
+    # Converter strings em documentos
+    docs = [Document(page_content=doc, metadata={"source": f"doc_{i}"}) for i, doc in enumerate(documents)]
+    
+    # Criar a base vetorial
+    vectorstore = Chroma.from_documents(
+        documents=docs,
+        embedding=embeddings,
+        persist_directory=os.getenv("CHROMA_PERSIST_DIRECTORY", "./chroma_db")
+    )
+    
+    return vectorstore
+
+# Inicializar a base vetorial
+vectorstore = initialize_vectorstore()
+
+# Definição da ferramenta de busca vetorial
+@tool
+def search_knowledge_base(query: str) -> str:
+    """
+    Busca informações relevantes na base de conhecimento vetorial.
+    Útil quando o usuário faz perguntas sobre conceitos técnicos, programação, IA, etc.
+    
+    Args:
+        query: A consulta ou pergunta do usuário
+    
+    Returns:
+        Informações relevantes encontradas na base de conhecimento
+    """
+    try:
+        # Realizar busca por similaridade
+        k_results = int(os.getenv("VECTOR_SEARCH_K_RESULTS", "3"))
+        docs = vectorstore.similarity_search(query, k=k_results)
+        
+        if docs:
+            results = []
+            for i, doc in enumerate(docs, 1):
+                results.append(f"{i}. {doc.page_content}")
+            
+            return "Informações encontradas na base de conhecimento:\n" + "\n".join(results)
+        else:
+            return "Nenhuma informação relevante encontrada na base de conhecimento."
+    
+    except Exception as e:
+        return f"Erro ao buscar na base de conhecimento: {str(e)}"
+
+# Lista de ferramentas disponíveis
+tools = [search_knowledge_base]
+tool_executor = ToolExecutor(tools)
 
 # Função para determinar se deve chamar ferramentas
 def should_continue(state: AgentState) -> str:
@@ -31,7 +103,7 @@ def should_continue(state: AgentState) -> str:
     last_message = messages[-1]
     
     # Se há tool_calls na última mensagem, execute as ferramentas
-    if isinstance(last_message, AIMessage) and hasattr(last_message, 'tool_calls') and last_message.tool_calls:
+    if "tool_calls" in last_message and last_message["tool_calls"]:
         return "call_tool"
     
     # Caso contrário, finalize
@@ -39,6 +111,7 @@ def should_continue(state: AgentState) -> str:
 
 # Função do agente principal
 def call_model(state: AgentState) -> AgentState:
+    
     """Função principal que chama o modelo LLM"""
     messages = state["messages"]
     
@@ -68,16 +141,15 @@ Para usar uma ferramenta, responda no formato JSON:
 
 Caso contrário, responda normalmente sem usar ferramentas."""
     
-    # Criar prompt como string
-    prompt_text = f"system: {system_prompt}\n"
+    # Preparar mensagens com contexto do sistema
+    prompt_messages = [{"role": "system", "content": system_prompt}] + messages
     
-    for msg in messages:
-        if isinstance(msg, HumanMessage):
-            prompt_text += f"user: {msg.content}\n"
-        elif isinstance(msg, AIMessage):
-            prompt_text += f"assistant: {msg.content}\n"
-        elif isinstance(msg, ToolMessage):
-            prompt_text += f"tool: {msg.content}\n"
+    # Criar prompt como string
+    prompt_text = ""
+    for msg in prompt_messages:
+        role = msg["role"]
+        content = msg["content"]
+        prompt_text += f"{role}: {content}\n"
     
     prompt_text += "assistant:"
     
@@ -89,18 +161,26 @@ Caso contrário, responda normalmente sem usar ferramentas."""
         try:
             response_json = json.loads(response.strip())
             if "tool_calls" in response_json:
-                ai_message = AIMessage(content=response)
-                ai_message.tool_calls = response_json["tool_calls"]
-                return {"messages": messages + [ai_message]}
+                return {
+                    "messages": messages + [{
+                        "role": "assistant", 
+                        "content": response,
+                        "tool_calls": response_json["tool_calls"]
+                    }]
+                }
         except json.JSONDecodeError:
             pass
         
         # Resposta normal sem tool calls
-        return {"messages": messages + [AIMessage(content=response)]}
+        return {
+            "messages": messages + [{"role": "assistant", "content": response}]
+        }
     
     except Exception as e:
         error_response = f"Erro ao chamar o modelo: {str(e)}"
-        return {"messages": messages + [AIMessage(content=error_response)]}
+        return {
+            "messages": messages + [{"role": "assistant", "content": error_response}]
+        }
 
 # Função para executar ferramentas
 def call_tool(state: AgentState) -> AgentState:
@@ -108,26 +188,31 @@ def call_tool(state: AgentState) -> AgentState:
     messages = state["messages"]
     last_message = messages[-1]
     
-    tool_calls = getattr(last_message, 'tool_calls', [])
+    tool_calls = last_message.get("tool_calls", [])
     
     results = []
     for tool_call in tool_calls:
         tool_name = tool_call["name"]
         tool_args = tool_call["args"]
         
-        # Executar a ferramenta usando a função importada
-        if tool_name == "search_knowledge_base":
-            result = search_knowledge_base.invoke(tool_args)
-            results.append(f"Resultado da ferramenta {tool_name}: {result}")
-        else:
-            results.append(f"Ferramenta {tool_name} não encontrada")
+        # Executar a ferramenta
+        action = ToolInvocation(
+            tool=tool_name,
+            tool_input=tool_args
+        )
+        
+        result = tool_executor.invoke(action)
+        results.append(f"Resultado da ferramenta {tool_name}: {result}")
     
     # Adicionar resultados das ferramentas às mensagens
-    tool_message = ToolMessage(content="\n".join(results), tool_call_id="1")
+    tool_message = {
+        "role": "tool",
+        "content": "\n".join(results)
+    }
     
     # Gerar resposta final baseada nos resultados
     final_prompt = f"""Com base nos resultados das ferramentas:
-{tool_message.content}
+{tool_message['content']}
 
 Responda à pergunta do usuário de forma clara e concisa."""
     
@@ -135,12 +220,18 @@ Responda à pergunta do usuário de forma clara e concisa."""
         final_response = llm.invoke(final_prompt)
         
         return {
-            "messages": messages + [tool_message, AIMessage(content=final_response)]
+            "messages": messages + [tool_message, {
+                "role": "assistant", 
+                "content": final_response
+            }]
         }
     except Exception as e:
         error_response = f"Erro ao processar resultado da ferramenta: {str(e)}"
         return {
-            "messages": messages + [tool_message, AIMessage(content=error_response)]
+            "messages": messages + [tool_message, {
+                "role": "assistant", 
+                "content": error_response
+            }]
         }
 
 # Construir o grafo do agente
@@ -182,7 +273,7 @@ def run_agent():
     
     print("🤖 Agente LangGraph inicializado!")
     print("💾 Base vetorial ChromaDB carregada")
-    print("🦙 Usando Ollama com llama3:latest")
+    print(f"🦙 Usando Ollama com {os.getenv('OLLAMA_MODEL', 'llama3:latest')}")
     print("\nDigite suas perguntas (ou 'quit' para sair):\n")
     
     while True:
@@ -200,19 +291,16 @@ def run_agent():
             print("🤖 Agente: Processando...")
             
             result = agent.invoke({
-                "messages": [HumanMessage(content=user_input)]
+                "messages": [{"role": "user", "content": user_input}]
             })
             
             # Extrair resposta final
             final_message = result["messages"][-1]
-            response = final_message.content
+            response = final_message["content"]
             
             print(f"🤖 Agente: {response}\n")
             
         except KeyboardInterrupt:
-            print("\n👋 Tchau!")
-            break
-        except EOFError:
             print("\n👋 Tchau!")
             break
         except Exception as e:

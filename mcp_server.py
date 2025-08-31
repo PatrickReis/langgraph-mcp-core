@@ -1,13 +1,17 @@
 import os
 import asyncio
 from fastmcp import FastMCP
+from dotenv import load_dotenv
 
 from tools import tools 
 
 from mcp_bridge import register_langchain_tools_as_mcp
 
+# Carregar variáveis de ambiente
+load_dotenv()
+
 def create_mcp_server() -> FastMCP:
-    mcp = FastMCP("LangGraphToolsMCP")
+    mcp = FastMCP(os.getenv("MCP_SERVER_NAME", "LangGraphToolsMCP"))
 
     # Opcional: healthcheck simples
     @mcp.tool("ping")
