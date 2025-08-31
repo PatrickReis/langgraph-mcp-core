@@ -76,5 +76,41 @@ def search_knowledge_base(query: str) -> str:
             return "Nenhuma informação relevante encontrada na base de conhecimento."
     except Exception as e:
         return f"Erro ao buscar na base de conhecimento: {str(e)}"
+    
+@tool
+def simple_calculator(expression: str) -> str:
+    """
+    Calculadora simples que avalia expressões matemáticas.
+    
+    Args:
+        expression: Expressão matemática como string (ex: "2 + 2", "10 * 5")
+    
+    Returns:
+        Resultado da operação matemática
+    """
+    try:
+        # Avaliação segura apenas de operações básicas
+        allowed_chars = set('0123456789+-*/()., ')
+        if not all(c in allowed_chars for c in expression):
+            return "Erro: Apenas operações matemáticas básicas são permitidas"
+        
+        result = eval(expression)
+        return f"Resultado: {result}"
+    except Exception as e:
+        return f"Erro na operação: {str(e)}"
 
-tools = [search_knowledge_base]
+@tool  
+def echo_tool(message: str) -> str:
+    """
+    Tool de echo que simplesmente retorna a mensagem recebida.
+    
+    Args:
+        message: Mensagem a ser ecoada
+    
+    Returns:
+        A mesma mensagem recebida
+    """
+    return f"Echo: {message}"
+
+
+tools = [search_knowledge_base,echo_tool,simple_calculator]
