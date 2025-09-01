@@ -32,13 +32,13 @@ class OllamaProvider(LLMProvider):
     
     def get_llm(self):
         try:
-            from langchain_community.llms import Ollama
-            return Ollama(
+            from langchain_ollama import OllamaLLM
+            return OllamaLLM(
                 model=self.model,
                 base_url=self.base_url
             )
         except ImportError:
-            raise ImportError("langchain_community não está instalado. Execute: pip install langchain-community")
+            raise ImportError("langchain-ollama não está instalado. Execute: pip install langchain-ollama")
     
     def get_embeddings(self):
         try:

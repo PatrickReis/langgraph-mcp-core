@@ -6,8 +6,9 @@ from langchain.text_splitter import CharacterTextSplitter
 from langchain.docstore.document import Document
 from langchain.tools import tool
 from langgraph.graph import StateGraph, END
-from langgraph.prebuilt import ToolExecutor, ToolInvocation
+from langgraph.prebuilt import ToolNode
 from langgraph.graph.message import add_messages
+from langchain_core.messages import HumanMessage, AIMessage
 import operator
 from dotenv import load_dotenv
 from llm_providers import get_llm, get_embeddings, get_provider_info
@@ -17,9 +18,7 @@ load_dotenv()
 
 # Configuração do estado do agente
 class AgentState(TypedDict):
-    messages: Annotated[List[Dict[str, Any]], add_messages]
-    tool_calls: List[Dict[str, Any]]
-    final_answer: str
+    messages: Annotated[list, add_messages]
 
 # Configuração dos provedores LLM
 try:
@@ -93,16 +92,19 @@ def search_knowledge_base(query: str) -> str:
 
 # Lista de ferramentas disponíveis
 tools = [search_knowledge_base]
-tool_executor = ToolExecutor(tools)
+tool_node = ToolNode(tools)
 
 # Função para determinar se deve chamar ferramentas
 def should_continue(state: AgentState) -> str:
     """Decide se deve chamar ferramentas ou finalizar"""
     messages = state["messages"]
+    if not messages:
+        return "end"
+    
     last_message = messages[-1]
     
-    # Se há tool_calls na última mensagem, execute as ferramentas
-    if "tool_calls" in last_message and last_message["tool_calls"]:
+    # Se é uma mensagem AI com tool_calls, execute as ferramentas
+    if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
         return "call_tool"
     
     # Caso contrário, finalize
@@ -110,128 +112,111 @@ def should_continue(state: AgentState) -> str:
 
 # Função do agente principal
 def call_model(state: AgentState) -> AgentState:
-    
-    """Função principal que chama o modelo LLM"""
+    """Função principal que chama o modelo LLM e decide se deve usar ferramentas"""
     messages = state["messages"]
     
-    # Prompt do sistema para orientar o agente
-    system_prompt = """Você é um assistente inteligente com acesso a uma base de conhecimento vetorial.
-
-Quando o usuário fizer perguntas sobre:
-- Conceitos de programação (Python, frameworks, etc.)
-- Inteligência Artificial e Machine Learning
-- Tecnologias como LangGraph, ChromaDB, Ollama
-- Processamento de linguagem natural
-- Qualquer tópico técnico
-
-Você DEVE usar a ferramenta 'search_knowledge_base' para buscar informações relevantes antes de responder.
-
-Para usar uma ferramenta, responda no formato JSON:
-{
-    "tool_calls": [
-        {
-            "name": "search_knowledge_base",
-            "args": {
-                "query": "sua consulta aqui"
-            }
-        }
-    ]
-}
-
-Caso contrário, responda normalmente sem usar ferramentas."""
-    
-    # Preparar mensagens com contexto do sistema
-    prompt_messages = [{"role": "system", "content": system_prompt}] + messages
-    
-    # Criar prompt como string
-    prompt_text = ""
-    for msg in prompt_messages:
-        role = msg["role"]
-        content = msg["content"]
-        prompt_text += f"{role}: {content}\n"
-    
-    prompt_text += "assistant:"
-    
-    # Chamar o modelo
     try:
-        response = llm.invoke(prompt_text)
+        # Obter última mensagem do usuário
+        last_human_msg = None
+        for msg in reversed(messages):
+            if isinstance(msg, HumanMessage):
+                last_human_msg = msg.content
+                break
         
-        # Tentar interpretar como JSON (para tool calls)
-        try:
-            response_json = json.loads(response.strip())
-            if "tool_calls" in response_json:
-                return {
-                    "messages": messages + [{
-                        "role": "assistant", 
-                        "content": response,
-                        "tool_calls": response_json["tool_calls"]
-                    }]
-                }
-        except json.JSONDecodeError:
-            pass
+        if not last_human_msg:
+            return {"messages": [AIMessage(content="Não consegui encontrar sua pergunta.")]}
         
-        # Resposta normal sem tool calls
-        return {
-            "messages": messages + [{"role": "assistant", "content": response}]
-        }
+        # Palavras-chave que indicam necessidade de busca na base de conhecimento
+        knowledge_keywords = [
+            'python', 'programação', 'langgraph', 'chromadb', 'ollama',
+            'machine learning', 'ia', 'inteligência artificial', 'rag',
+            'deep learning', 'nlp', 'conceito', 'o que é', 'como funciona'
+        ]
+        
+        user_lower = last_human_msg.lower()
+        needs_search = any(keyword in user_lower for keyword in knowledge_keywords)
+        
+        if needs_search:
+            print("🔍 Agente decidiu usar a base de conhecimento...")
+            
+            # Criar uma mensagem AI que indica tool call
+            tool_call_msg = AIMessage(
+                content="Vou buscar informações relevantes na base de conhecimento.",
+                tool_calls=[{
+                    "name": "search_knowledge_base",
+                    "args": {"query": last_human_msg},
+                    "id": "search_1"
+                }]
+            )
+            
+            return {"messages": [tool_call_msg]}
+        else:
+            print("💭 Agente respondendo diretamente...")
+            
+            # Converter mensagens para formato de prompt
+            prompt_parts = []
+            for msg in messages:
+                if hasattr(msg, 'content'):
+                    content = msg.content
+                    if isinstance(msg, HumanMessage):
+                        prompt_parts.append(f"Human: {content}")
+                    elif isinstance(msg, AIMessage):
+                        prompt_parts.append(f"Assistant: {content}")
+                
+            prompt = "\n".join(prompt_parts) + "\nAssistant:"
+            
+            # Chamar o modelo
+            response = llm.invoke(prompt)
+            return {"messages": [AIMessage(content=response)]}
     
     except Exception as e:
         error_response = f"Erro ao chamar o modelo: {str(e)}"
-        return {
-            "messages": messages + [{"role": "assistant", "content": error_response}]
-        }
+        return {"messages": [AIMessage(content=error_response)]}
 
 # Função para executar ferramentas
 def call_tool(state: AgentState) -> AgentState:
-    """Executa as ferramentas solicitadas"""
+    """Executa as ferramentas via ToolNode com visibilidade"""
     messages = state["messages"]
     last_message = messages[-1]
     
-    tool_calls = last_message.get("tool_calls", [])
+    # Mostrar quais ferramentas estão sendo executadas
+    if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
+        for tool_call in last_message.tool_calls:
+            tool_name = tool_call.get("name", "unknown")
+            print(f"🛠️ Executando ferramenta: {tool_name}")
     
-    results = []
-    for tool_call in tool_calls:
-        tool_name = tool_call["name"]
-        tool_args = tool_call["args"]
+    # Executar ferramentas
+    result = tool_node.invoke(state)
+    
+    # Adicionar resposta final baseada no resultado da ferramenta
+    tool_messages = result["messages"]
+    
+    # Encontrar a mensagem de resultado da ferramenta
+    tool_result = None
+    for msg in tool_messages:
+        if hasattr(msg, 'content') and msg.content:
+            tool_result = msg.content
+            break
+    
+    if tool_result:
+        print("📚 Resultado obtido da base de conhecimento")
         
-        # Executar a ferramenta
-        action = ToolInvocation(
-            tool=tool_name,
-            tool_input=tool_args
-        )
-        
-        result = tool_executor.invoke(action)
-        results.append(f"Resultado da ferramenta {tool_name}: {result}")
-    
-    # Adicionar resultados das ferramentas às mensagens
-    tool_message = {
-        "role": "tool",
-        "content": "\n".join(results)
-    }
-    
-    # Gerar resposta final baseada nos resultados
-    final_prompt = f"""Com base nos resultados das ferramentas:
-{tool_message['content']}
+        # Gerar resposta final com base no resultado
+        final_prompt = f"""Com base nas informações da base de conhecimento:
+{tool_result}
 
-Responda à pergunta do usuário de forma clara e concisa."""
+Pergunta original: {messages[0].content if messages else ""}
+
+Forneça uma resposta clara e informativa, usando as informações encontradas."""
+
+        try:
+            final_response = llm.invoke(final_prompt)
+            result["messages"].append(AIMessage(content=final_response))
+            print("✅ Resposta final gerada com base na busca")
+        except Exception as e:
+            result["messages"].append(AIMessage(content=f"Erro ao gerar resposta final: {e}"))
     
-    try:
-        final_response = llm.invoke(final_prompt)
-        
-        return {
-            "messages": messages + [tool_message, {
-                "role": "assistant", 
-                "content": final_response
-            }]
-        }
-    except Exception as e:
-        error_response = f"Erro ao processar resultado da ferramenta: {str(e)}"
-        return {
-            "messages": messages + [tool_message, {
-                "role": "assistant", 
-                "content": error_response
-            }]
-        }
+    return result
 
 # Construir o grafo do agente
 def create_agent():
@@ -257,8 +242,8 @@ def create_agent():
         }
     )
     
-    # Após executar ferramentas, voltar para o agente
-    workflow.add_edge("action", "agent")
+    # Após executar ferramentas, finalizar (não voltar para o agente)
+    workflow.add_edge("action", END)
     
     # Compilar o grafo
     app = workflow.compile()
@@ -291,12 +276,12 @@ def run_agent():
             print("🤖 Agente: Processando...")
             
             result = agent.invoke({
-                "messages": [{"role": "user", "content": user_input}]
+                "messages": [HumanMessage(content=user_input)]
             })
             
             # Extrair resposta final
             final_message = result["messages"][-1]
-            response = final_message["content"]
+            response = final_message.content
             
             print(f"🤖 Agente: {response}\n")
             

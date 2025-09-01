@@ -113,4 +113,11 @@ def echo_tool(message: str) -> str:
     return f"Echo: {message}"
 
 
-tools = [search_knowledge_base,echo_tool,simple_calculator]
+# Importar o agente como tool
+try:
+    from agent_tool import langgraph_agent
+    print("✅ Agente LangGraph carregado como tool")
+    tools = [search_knowledge_base, echo_tool, simple_calculator, langgraph_agent]
+except Exception as e:
+    print(f"⚠️ Agente LangGraph não disponível: {e}")
+    tools = [search_knowledge_base, echo_tool, simple_calculator]
