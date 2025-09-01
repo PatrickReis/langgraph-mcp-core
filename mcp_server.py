@@ -40,8 +40,21 @@ except Exception as e:
 # Carregar e executar bridge
 print("🌉 Executando bridge...")
 try:
-    from mcp_bridge import register_langchain_tools_as_mcp
+    from mcp_bridge import register_langchain_tools_as_mcp, register_langgraph_agent_as_mcp
+    
+    # Registrar tools individuais
     register_langchain_tools_as_mcp(mcp, tools)
+    
+    # Registrar agente completo do main.py
+    print("🤖 Registrando agente LangGraph completo...")
+    from main import create_agent
+    register_langgraph_agent_as_mcp(
+        mcp, 
+        create_agent,
+        agent_name="langgraph_orchestrator",
+        description="Orquestrador LangGraph completo que decide automaticamente quando usar ferramentas específicas baseado na pergunta do usuário"
+    )
+    
     print("✅ Bridge concluído com sucesso")
 except Exception as e:
     print(f"❌ Erro no bridge: {e}")

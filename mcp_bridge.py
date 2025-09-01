@@ -1,5 +1,6 @@
 """
 Bridge: registra tools do LangChain como tools MCP (FastMCP).
+Inclui capacidade de expor agentes LangGraph completos como tools MCP.
 """
 
 import asyncio
@@ -9,6 +10,7 @@ from typing import Any, Dict, List, Optional, Type
 # Import genérico para compatibilidade
 from pydantic import BaseModel
 from langchain.tools.base import BaseTool
+from langchain_core.messages import HumanMessage
 
 
 def _tool_metadata(lc_tool: BaseTool):
@@ -106,4 +108,59 @@ def register_langchain_tools_as_mcp(mcp, tools: List[BaseTool]):
                 print(f"❌ Erro ao registrar tool simples {name}: {e}")
 
 
-__all__ = ["register_langchain_tools_as_mcp"]
+def register_langgraph_agent_as_mcp(mcp, agent_function, agent_name: str = "langgraph_agent", 
+                                   description: str = "Agente LangGraph completo com orquestração inteligente"):
+    """
+    Registra um agente LangGraph completo como tool MCP.
+    
+    Args:
+        mcp: Instância do servidor MCP
+        agent_function: Função que retorna o agente compilado (ex: create_agent do main.py)
+        agent_name: Nome da tool no MCP
+        description: Descrição da tool
+    """
+    print(f"📝 Registrando agente LangGraph: {agent_name}")
+    
+    # Cache do agente para evitar recompilação
+    _agent_cache = None
+    
+    async def agent_wrapper(user_message: str) -> str:
+        """Wrapper assíncrono para o agente LangGraph"""
+        nonlocal _agent_cache
+        
+        try:
+            # Usar cache do agente
+            if _agent_cache is None:
+                print("🔧 Compilando agente LangGraph...")
+                _agent_cache = agent_function()
+            
+            print(f"🤖 Executando agente para: {user_message[:50]}...")
+            
+            # Executar agente em thread separada
+            def _run_agent():
+                result = _agent_cache.invoke({
+                    "messages": [HumanMessage(content=user_message)]
+                })
+                return result["messages"][-1].content
+            
+            response = await asyncio.to_thread(_run_agent)
+            return response
+            
+        except Exception as e:
+            error_msg = f"Erro no agente LangGraph: {str(e)}"
+            print(f"❌ {error_msg}")
+            return error_msg
+    
+    # Configurar metadados da tool
+    agent_wrapper.__name__ = agent_name
+    agent_wrapper.__doc__ = description
+    
+    # Registrar no MCP
+    try:
+        mcp.tool()(agent_wrapper)
+        print(f"✅ Agente LangGraph '{agent_name}' registrado com sucesso")
+    except Exception as e:
+        print(f"❌ Erro ao registrar agente LangGraph: {e}")
+
+
+__all__ = ["register_langchain_tools_as_mcp", "register_langgraph_agent_as_mcp"]
