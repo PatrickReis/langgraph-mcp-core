@@ -1,5 +1,5 @@
 """
-Bridge: registra tools do LangChain como tools MCP (FastMCP).
+lang_mcp_transform: registra tools do LangChain como tools MCP (FastMCP).
 Inclui capacidade de expor agentes LangGraph completos como tools MCP.
 """
 
@@ -84,9 +84,9 @@ def register_langchain_tools_as_mcp(mcp, tools: List[BaseTool]):
 
             try:
                 mcp.tool()(wrapper)  # registra com nome=__name__ e docstring
-                print(f"✅ Tool registrada com sucesso: {name}")
+                print(f"Tool registrada com sucesso: {name}")
             except Exception as e:
-                print(f"❌ Erro ao registrar tool estruturada {name}: {e}")
+                print(f"Erro ao registrar tool estruturada {name}: {e}")
         else:
             async def simple_wrapper(input: str) -> str:
                 def _run():
@@ -103,9 +103,9 @@ def register_langchain_tools_as_mcp(mcp, tools: List[BaseTool]):
 
             try:
                 mcp.tool()(simple_wrapper)
-                print(f"✅ Tool simples registrada com sucesso: {name}")
+                print(f"Tool simples registrada com sucesso: {name}")
             except Exception as e:
-                print(f"❌ Erro ao registrar tool simples {name}: {e}")
+                print(f"Erro ao registrar tool simples {name}: {e}")
 
 
 def register_langgraph_agent_as_mcp(mcp, agent_function, agent_name: str = "langgraph_agent", 
@@ -158,9 +158,9 @@ def register_langgraph_agent_as_mcp(mcp, agent_function, agent_name: str = "lang
     # Registrar no MCP
     try:
         mcp.tool()(agent_wrapper)
-        print(f"✅ Agente LangGraph '{agent_name}' registrado com sucesso")
+        print(f"Agente LangGraph '{agent_name}' registrado com sucesso")
     except Exception as e:
-        print(f"❌ Erro ao registrar agente LangGraph: {e}")
+        print(f"Erro ao registrar agente LangGraph: {e}")
 
 
 __all__ = ["register_langchain_tools_as_mcp", "register_langgraph_agent_as_mcp"]

@@ -4,7 +4,7 @@ from langchain_chroma import Chroma
 from langchain.docstore.document import Document
 from langchain.tools import tool
 from dotenv import load_dotenv
-from llm_providers import get_embeddings
+from providers.llm_providers import get_embeddings
 
 # Carregar variáveis de ambiente
 load_dotenv()
