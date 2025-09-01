@@ -121,6 +121,7 @@ mcp-inspector
 - **Configuração Flexível**: Todas as configurações via variáveis de ambiente
 - **Múltiplos Provedores**: Suporte para Ollama, OpenAI e Google Gemini
 - **Arquitetura Modular**: Sistema componentizado para fácil extensão
+- **Geração Automática de Tools**: Converte APIs OpenAPI em ferramentas LangGraph automaticamente
 
 ## 📁 Estrutura do Projeto
 
@@ -128,6 +129,7 @@ mcp-inspector
 langgraph/
 ├── agent.py                     # Agente principal com interface de linha de comando
 ├── mcp_server.py               # Servidor MCP completo com Tools, Resources e Prompts
+├── auto_tools.py               # Script de automação para geração de tools da API
 ├── graphs/
 │   ├── __init__.py
 │   └── graph.py                # Lógica isolada do LangGraph (grafo, nós, estados)
@@ -136,7 +138,13 @@ langgraph/
 │   └── llm_providers.py        # Sistema modular de provedores LLM
 ├── tools/
 │   ├── __init__.py
-│   └── tools.py                # Ferramentas de busca vetorial e weather
+│   ├── tools.py                # Ferramentas de busca vetorial e utilitários
+│   └── api_tools_auto.py       # Tools geradas automaticamente da API (dinâmico)
+├── utils/
+│   ├── __init__.py
+│   └── openapi_to_tools.py     # Utilitário para conversão OpenAPI → LangGraph Tools
+├── openapi/
+│   └── openapi.json            # Especificação OpenAPI da API
 ├── transform/
 │   ├── __init__.py
 │   └── lang_mcp_transform.py   # Bridge entre LangChain e MCP
@@ -235,3 +243,129 @@ O agente decide automaticamente entre:
 2. **Busca na Base**: Para tópicos técnicos (python, IA, etc.)
 3. **Ferramentas Externas**: Para clima, cálculos específicos
 4. **Combinação**: Usar múltiplas ferramentas quando necessário
+
+## 🛠️ Geração Automática de Tools
+
+### Visão Geral
+
+O sistema permite converter automaticamente especificações OpenAPI/Swagger em ferramentas LangGraph funcionais, eliminando a necessidade de criar tools manualmente para cada endpoint da API.
+
+### Arquivos Principais
+
+- **`auto_tools.py`**: Script de automação completa que orquestra todo o processo
+- **`utils/openapi_to_tools.py`**: Utilitário base para conversão OpenAPI → LangGraph Tools
+- **`openapi/openapi.json`**: Especificação OpenAPI da sua API
+- **`tools/api_tools_auto.py`**: Arquivo gerado dinamicamente com as tools
+
+### Como Usar
+
+#### 1. Preparar OpenAPI
+Coloque sua especificação OpenAPI no arquivo `openapi/openapi.json`:
+
+```json
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Minha API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/users": {
+      "get": {
+        "summary": "List Users",
+        "operationId": "list_users"
+      }
+    }
+  }
+}
+```
+
+#### 2. Gerar Tools Automaticamente
+Execute o script de automação:
+
+```bash
+python auto_tools.py
+```
+
+#### 3. Resultado
+O script irá:
+- ✅ Ler `openapi/openapi.json`
+- ✅ Gerar `tools/api_tools_auto.py` com todas as ferramentas
+- ✅ Atualizar automaticamente `tools/tools.py` para incluir as novas tools
+- ✅ Integrar as ferramentas no agente sem necessidade de restart
+
+### Exemplo de Output
+
+Para uma API CRUD simples, o sistema gera automaticamente:
+
+```python
+@tool
+def list_users() -> Dict[str, Any]:
+    """List Users"""
+    url = f"{BASE_URL}/users"
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        return {"status": "success", "data": response.json()}
+    except requests.exceptions.RequestException as e:
+        return {"status": "error", "message": str(e)}
+
+@tool  
+def create_user(name: str, email: str) -> Dict[str, Any]:
+    """Create User"""
+    url = f"{BASE_URL}/users"
+    try:
+        json_data = {"name": name, "email": email}
+        response = requests.post(url, json=json_data)
+        response.raise_for_status()
+        return {"status": "success", "data": response.json()}
+    except requests.exceptions.RequestException as e:
+        return {"status": "error", "message": str(e)}
+```
+
+### Funcionalidades Suportadas
+
+- **Métodos HTTP**: GET, POST, PUT, DELETE, PATCH
+- **Parâmetros**: Path, Query, Request Body
+- **Tipos de Dados**: string, integer, boolean, object, array
+- **Validação**: Parâmetros obrigatórios vs opcionais
+- **Documentação**: Geração automática de docstrings
+- **Tratamento de Erros**: Captura e formatação de exceções HTTP
+
+### Configuração Personalizada
+
+#### Alterar URL Base da API
+Edite `auto_tools.py`:
+
+```python
+base_url = "https://minha-api.com/api/v1"  # Altere aqui
+```
+
+#### Personalizar Nome do Arquivo de Saída
+```python
+output_file = "tools/minhas_tools_customizadas.py"  # Altere aqui
+```
+
+### Workflow para Desenvolvedores
+
+1. **Desenvolvimento da API**: Crie sua API com documentação OpenAPI
+2. **Exportar OpenAPI**: Salve o JSON em `openapi/openapi.json`
+3. **Executar Script**: `python auto_tools.py`
+4. **Testar**: As tools estão automaticamente disponíveis no agente
+5. **Iterar**: Atualize a API, execute o script novamente
+
+### Integração com CI/CD
+
+```bash
+# No seu pipeline de deploy
+python auto_tools.py  # Regenera tools automaticamente
+python agent.py --test  # Testa o agente com as novas tools
+```
+
+### Vantagens
+
+- **Velocidade**: Gera dezenas de tools em segundos
+- **Consistência**: Todas as tools seguem o mesmo padrão
+- **Manutenibilidade**: Alterações na API são refletidas automaticamente
+- **Documentação**: Tools auto-documentadas com base no OpenAPI
+- **Tipagem**: Parâmetros e retornos tipados corretamente
